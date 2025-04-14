@@ -34,10 +34,13 @@ def create_app() -> FastAPI:
     )
     # Set the schemes in the OpenAPI schema manually
     if not app.openapi_schema:
+        # Store the original openapi method
+        original_openapi = app.openapi
+
         def custom_openapi() -> dict:
             if app.openapi_schema:
                 return app.openapi_schema
-            openapi_schema = app.openapi()
+            openapi_schema = original_openapi()
             openapi_schema["components"]["securitySchemes"] = {
                 "HTTPBearer": {
                     "type": "http",

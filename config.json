@@ -225,6 +225,23 @@
       ],
       "update_status": "up_to_date",
       "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Get All Users",
+        "details": "This endpoint retrieves all user records from the database. It authenticates the request using the Authentication module to ensure that only authenticated requests are served. It then uses a SQLAlchemy session from the SQL adaptor to query and return all records from the User datamodel.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "User",
+          "SQL adaptor",
+          "Authentication"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
     }
   ],
   "github": "https://github.com/Modular-Asembly/lgaleana_debug-vibes"
