@@ -3,6 +3,7 @@ load_dotenv()  # Load environment variables early
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer
 
 from app.routes.user import router as user_router
 from app.routes.conversation import router as conversation_router
@@ -20,6 +21,12 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Setup security scheme for Swagger UI
+    security = HTTPBearer(
+        scheme_name="Authorization",
+        description="Enter your Bearer token"
     )
 
     # Include API routers

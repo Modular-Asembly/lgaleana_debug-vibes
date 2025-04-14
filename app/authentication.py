@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import requests
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -11,6 +12,11 @@ from app.models.user import User
 # A simple in-memory cache to store GitHub API responses
 _auth_cache: Dict[str, Dict[str, Any]] = {}
 
+# Initialize the security scheme
+security = HTTPBearer(
+    scheme_name="Authorization",
+    description="Enter your Bearer token"
+)
 
 def fetch_github_user(token: str) -> Dict[str, Any]:
     """
@@ -40,16 +46,19 @@ def fetch_github_user(token: str) -> Dict[str, Any]:
     return user_data
 
 
-def authenticate_user(request: Request, db: Session = Depends(get_db)) -> User:
+def authenticate_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
     """
     FastAPI dependency to authenticate a user using a GitHub access token.
-    Extracts the token from the 'Authorization' header, calls the GitHub API to get user data,
-    and retrieves the corresponding User record from the database.
+    Uses HTTPBearer security scheme to extract the token, calls the GitHub API to get user data,
+    and retrieves the corresponding User record from the database using the GitHub ID.
     
     Caching is used to minimize GitHub API calls for identical tokens.
     
     Args:
-        request (Request): The incoming request.
+        credentials (HTTPAuthorizationCredentials): The bearer token credentials.
         db (Session): SQLAlchemy session dependency.
     
     Returns:
@@ -58,34 +67,25 @@ def authenticate_user(request: Request, db: Session = Depends(get_db)) -> User:
     Raises:
         HTTPException: If token is missing, invalid, or user is not found in the database.
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
+    if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header missing",
+            detail="Authorization credentials missing",
         )
 
-    # Expecting header format: "token <access_token>"
-    parts = auth_header.split()
-    if len(parts) != 2 or parts[0].lower() != "token":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Authorization header format",
-        )
-    
-    token = parts[1]
+    token = credentials.credentials
     github_user = fetch_github_user(token)
 
-    # Extract email from GitHub data; if not provided directly, additional logic could be added
-    email = github_user.get("email")
-    if not email:
+    # Extract GitHub ID from response
+    github_id = str(github_user["id"])  # Convert to string since our model stores it as String
+    if not github_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email not found in GitHub response",
+            detail="GitHub ID not found in response",
         )
 
-    # Retrieve the corresponding User record from the database
-    user = db.query(User).filter(User.email == email).first()
+    # Retrieve the corresponding User record from the database using github_id
+    user = db.query(User).filter(User.github_id == github_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
