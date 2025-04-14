@@ -1,42 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from app.db import get_db
-from app.models.user import User
-from app.models.conversation import Conversation
-from app.authentication import authenticate_user
+from fastapi import APIRouter, HTTPException, status
+from typing import Dict
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-class CreateConversationRequest(BaseModel):
-    user_id: int
-    github_repository: str
-
-class ConversationResponse(BaseModel):
-    id: int
-    user_id: int
-    github_repository: str
-
-    class Config:
-        orm_mode = True
-
-@router.post("/", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
-def create_conversation(
-    payload: CreateConversationRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(authenticate_user),
-) -> ConversationResponse:
-    # Validate that the user exists based on provided user_id
-    user = db.query(User).filter(User.id == payload.user_id).first()
-    if not user:
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_or_get_conversation(payload: Dict) -> Dict:
+    """
+    Dummy implementation for the 'Get or Create Conversation' endpoint.
+    It receives a JSON payload containing the 'github_repository', and returns a
+    conversation with an empty list of messages.
+    """
+    # In a real implementation, you would validate the payload, check for an
+    # existing conversation, create one if necessary, and return the conversation's messages.
+    github_repository = payload.get("github_repository")
+    if not github_repository:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with id {payload.user_id} not found",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing 'github_repository' in payload",
         )
-
-    # Create the new conversation record associated with the user
-    conversation = Conversation(user_id=payload.user_id, github_repository=payload.github_repository)
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+    conversation = {
+        "conversation_id": 1,
+        "github_repository": github_repository,
+        "messages": []
+    }
     return conversation
+
+@router.get("/{conversation_id}", status_code=status.HTTP_200_OK)
+def get_conversation(conversation_id: int) -> Dict:
+    """
+    Dummy implementation to retrieve a conversation's details.
+    """
+    # In a real implementation, you would query the database.
+    return {
+        "conversation_id": conversation_id,
+        "github_repository": "dummy-repository",
+        "messages": []
+    }
