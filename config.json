@@ -225,6 +225,24 @@
       ],
       "update_status": "up_to_date",
       "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Get All Messages",
+        "details": "This endpoint retrieves all messages associated with conversations linked to a specific GitHub repository. The endpoint expects a query parameter 'github_repository'. It uses the Conversation datamodel to filter conversations by the given repository and then aggregates all messages from those conversations via the Message datamodel. This endpoint requires authentication via the Authentication module.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "Authentication",
+          "SQL adaptor",
+          "Conversation",
+          "Message"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
     }
   ],
   "github": "https://github.com/Modular-Asembly/lgaleana_debug-vibes"
