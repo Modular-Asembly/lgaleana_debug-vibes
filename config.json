@@ -24,11 +24,19 @@
           "uvicorn==0.34.0"
         ],
         "dependencies": [
-          "Every router and Base"
+          "SQL adaptor",
+          "Create or Get User",
+          "Create Conversation",
+          "Add Message to Conversation"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/main.py",
+          "content": "from dotenv import load_dotenv\nload_dotenv()\n\nfrom fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\n\nfrom app.db import engine, Base\nfrom app.routes.user import router as user_router\nfrom app.routes.conversation import router as conversation_router\nfrom app.routes.message import router as message_router\n\ndef create_app() -> FastAPI:\n    app = FastAPI()\n    app.add_middleware(\n        CORSMiddleware,\n        allow_origins=[\"*\"],\n        allow_credentials=True,\n        allow_methods=[\"*\"],\n        allow_headers=[\"*\"],\n    )\n    app.include_router(user_router)\n    app.include_router(conversation_router)\n    app.include_router(message_router)\n    \n    Base.metadata.create_all(bind=engine)\n    return app\n\napp = create_app()\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -55,8 +63,13 @@
         ],
         "dependencies": []
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/db.py",
+          "content": "import os\nfrom typing import Generator\nfrom sqlalchemy import create_engine\nfrom sqlalchemy.orm import declarative_base, sessionmaker, Session\n\n# Get the database URL from environment variables\nDB_URL: str = os.environ[\"DB_URL\"]\n\n# Create the SQLAlchemy engine\nengine = create_engine(DB_URL, future=True)\n\n# Create a configured \"SessionLocal\" class\nSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)\n\n# Base class for declarative class definitions.\nBase = declarative_base()\n\ndef get_db() -> Generator[Session, None, None]:\n    \"\"\"\n    Provides a database session to be used as FastAPI dependency.\n    \n    Usage example in a FastAPI endpoint:\n\n      from fastapi import Depends\n      from app.db import get_db\n      \n      @app.get(\"/items/\")\n      def read_items(db: Session = Depends(get_db)):\n          # use db session here\n          ...\n    \"\"\"\n    db: Session = SessionLocal()\n    try:\n        yield db\n    finally:\n        db.close()\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -64,13 +77,20 @@
         "type": "datamodel",
         "name": "User",
         "details": "This SQLAlchemy model represents a GitHub user. It contains an auto-generated primary key 'id', a 'github_id' field to store the GitHub ID, an email, and a 'raw_data' field to store GitHub user data as JSON.",
-        "dependencies": [],
+        "dependencies": [
+          "SQL adaptor"
+        ],
         "packages": [
           "sqlalchemy==2.0.36"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/models/user.py",
+          "content": "from sqlalchemy import Column, Integer, String, JSON\nfrom app.db import Base\n\nclass User(Base):\n    __tablename__ = \"users\"\n\n    id = Column(Integer, primary_key=True, index=True)\n    github_id = Column(String, unique=True, nullable=False, index=True)\n    email = Column(String, unique=True, nullable=False, index=True)\n    raw_data = Column(JSON, nullable=False)\n\n    def __repr__(self) -> str:\n        return f\"<User(id={self.id}, github_id='{self.github_id}', email='{self.email}')>\"\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -81,13 +101,18 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
+          "Authentication",
           "SQL adaptor",
-          "User",
-          "Authentication"
+          "User"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/routes/user.py",
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.authentication import authenticate_user\nfrom typing import Any, Dict\n\nrouter = APIRouter(prefix=\"/users\", tags=[\"users\"])\n\nclass CreateOrGetUserRequest(BaseModel):\n    id: str = Field(..., description=\"GitHub ID\")\n    login: str = Field(..., description=\"GitHub username\")\n    email: str = Field(..., description=\"Email address\")\n\n    class Config:\n        extra = \"allow\"  # Allow extra fields to be stored\n\nclass UserResponse(BaseModel):\n    id: int\n    github_id: str\n    email: str\n    raw_data: Dict[str, Any]\n\n    class Config:\n        orm_mode = True\n\n@router.post(\"/\", response_model=UserResponse, status_code=status.HTTP_200_OK)\ndef create_or_get_user(\n    payload: CreateOrGetUserRequest,\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user)\n) -> UserResponse:\n    # Check if a user with the given GitHub ID already exists.\n    existing_user: User | None = db.query(User).filter(User.github_id == payload.id).first()\n    if existing_user:\n        return existing_user\n\n    # Create a new user record with the entire payload as raw_data.\n    raw_payload: Dict[str, Any] = payload.dict(by_alias=True, exclude_unset=False)\n    new_user = User(\n        github_id=payload.id,\n        email=payload.email,\n        raw_data=raw_payload\n    )\n    db.add(new_user)\n    db.commit()\n    db.refresh(new_user)\n    return new_user\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -96,15 +121,19 @@
         "name": "Conversation",
         "details": "This SQLAlchemy model represents a conversation. It contains an auto-generated primary key 'id', a 'github_repository' field to store the repository related to the conversation, and a foreign key 'user_id' that associates the conversation with a User. It also defines a relationship to the Message model to access all messages belonging to the conversation.",
         "dependencies": [
-          "SQL adaptor",
-          "User"
+          "SQL adaptor"
         ],
         "packages": [
           "sqlalchemy==2.0.36"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/models/conversation.py",
+          "content": "from sqlalchemy import Column, Integer, String, ForeignKey\nfrom sqlalchemy.orm import relationship\nfrom app.db import Base\n\nclass Conversation(Base):\n    __tablename__ = \"conversations\"\n\n    id = Column(Integer, primary_key=True, index=True)\n    github_repository = Column(String, nullable=False)\n    user_id = Column(Integer, ForeignKey(\"users.id\"), nullable=False)\n\n    # Bidirectional relationship with Message datamodel\n    messages = relationship(\"Message\", back_populates=\"conversation\", cascade=\"all, delete-orphan\")\n\n    def __repr__(self) -> str:\n        return f\"<Conversation(id={self.id}, github_repository='{self.github_repository}', user_id={self.user_id})>\"\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -113,15 +142,19 @@
         "name": "Message",
         "details": "This SQLAlchemy model represents a message. It contains an auto-generated primary key 'id', a 'role' field, and a 'content' field. It also includes a foreign key 'conversation_id' to associate the message with a Conversation.",
         "dependencies": [
-          "SQL adaptor",
-          "Conversation"
+          "SQL adaptor"
         ],
         "packages": [
           "sqlalchemy==2.0.36"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/models/message.py",
+          "content": "from sqlalchemy import Column, Integer, String, ForeignKey, Text\nfrom sqlalchemy.orm import relationship\nfrom app.db import Base\n\nclass Message(Base):\n    __tablename__ = \"messages\"\n\n    id = Column(Integer, primary_key=True, index=True)\n    role = Column(String, nullable=False)\n    content = Column(Text, nullable=False)\n    conversation_id = Column(Integer, ForeignKey(\"conversations.id\"), nullable=False)\n\n    # Bidirectional relationship with Conversation\n    conversation = relationship(\"Conversation\", back_populates=\"messages\")\n\n    def __repr__(self) -> str:\n        return f\"<Message(id={self.id}, role='{self.role}', conversation_id={self.conversation_id})>\"\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -132,14 +165,19 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
+          "Authentication",
           "SQL adaptor",
-          "User",
           "Conversation",
-          "Authentication"
+          "User"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/routes/conversation.py",
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.models.conversation import Conversation\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/conversations\", tags=[\"conversations\"])\n\nclass CreateConversationRequest(BaseModel):\n    user_id: int\n    github_repository: str\n\nclass ConversationResponse(BaseModel):\n    id: int\n    user_id: int\n    github_repository: str\n\n    class Config:\n        orm_mode = True\n\n@router.post(\"/\", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)\ndef create_conversation(\n    payload: CreateConversationRequest,\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user),\n) -> ConversationResponse:\n    # Validate that the user exists based on provided user_id\n    user = db.query(User).filter(User.id == payload.user_id).first()\n    if not user:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=f\"User with id {payload.user_id} not found\",\n        )\n\n    # Create the new conversation record associated with the user\n    conversation = Conversation(user_id=payload.user_id, github_repository=payload.github_repository)\n    db.add(conversation)\n    db.commit()\n    db.refresh(conversation)\n    return conversation\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -150,75 +188,19 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
+          "Message",
           "SQL adaptor",
           "Conversation",
-          "Message",
           "Authentication"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
-      "is_deployed": false
-    },
-    {
-      "design": {
-        "type": "endpoint",
-        "name": "login",
-        "details": "Validates the user. Creates an access token.\n\nALGORITHM = \"HS256\"\nACCESS_TOKEN_EXPIRE_MINUTES = 30 minutes\n\nReturn {\n    \"access_token\": ...,\n    \"token_type\": \"bearer\",\n    \"user\": {...}\n}",
-        "env_variables": [
-          "SECRET_KEY"
-        ],
-        "packages": [
-          "bcrypt==4.0.1",
-          "fastapi==0.115.6",
-          "passlib==1.7.4",
-          "pyjwt==2.10.1",
-          "sqlalchemy==2.0.36"
-        ],
-        "dependencies": [
-          "User"
-        ]
-      },
-      "files": [],
-      "update_status": "to_remove",
-      "is_deployed": false
-    },
-    {
-      "design": {
-        "type": "module",
-        "name": "authenticate",
-        "details": "Authenticates and returns the user. This method is used by other FastAPI endpoints.\n\nUse OAuth2PasswordBearer(tokenUrl=\"login\").",
-        "env_variables": [
-          "SECRET_KEY"
-        ],
-        "packages": [
-          "fastapi==0.115.6",
-          "pyjwt==2.10.1",
-          "sqlalchemy==2.0.36"
-        ],
-        "dependencies": []
-      },
-      "files": [],
-      "update_status": "to_remove",
-      "is_deployed": false
-    },
-    {
-      "design": {
-        "type": "endpoint",
-        "name": "create user",
-        "details": "Creates an user. Hashes its password.",
-        "env_variables": [],
-        "packages": [
-          "fastapi==0.115.6",
-          "pydantic[email]==2.10.4"
-        ],
-        "dependencies": [
-          "User",
-          "authenticate"
-        ]
-      },
-      "files": [],
-      "update_status": "to_remove",
+      "files": [
+        {
+          "path": "app/routes/message.py",
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status, Request\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom typing import Any, Dict\n\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/messages\", tags=[\"messages\"])\n\nclass AddMessageRequest(BaseModel):\n    conversation_id: int = Field(..., description=\"ID of the conversation\")\n    role: str = Field(..., description=\"Role of the message sender\")\n    content: str = Field(..., description=\"Content of the message\")\n\nclass MessageResponse(BaseModel):\n    id: int\n    role: str\n    content: str\n    conversation_id: int\n\n    class Config:\n        orm_mode = True\n\n@router.post(\n    \"/\",\n    response_model=MessageResponse,\n    status_code=status.HTTP_201_CREATED,\n)\ndef add_message(\n    payload: AddMessageRequest,\n    db: Session = Depends(get_db),\n    current_user: Any = Depends(authenticate_user)\n) -> MessageResponse:\n    # Validate that the conversation exists\n    conversation = db.query(Conversation).filter(Conversation.id == payload.conversation_id).first()\n    if not conversation:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=f\"Conversation with id {payload.conversation_id} not found\",\n        )\n    \n    # Create new Message record\n    new_message = Message(\n        role=payload.role,\n        content=payload.content,\n        conversation_id=payload.conversation_id\n    )\n    db.add(new_message)\n    db.commit()\n    db.refresh(new_message)\n    return new_message\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -235,8 +217,13 @@
           "User"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/authentication.py",
+          "content": "import os\nfrom typing import Any, Dict\n\nimport requests\nfrom fastapi import Depends, HTTPException, Request, status\nfrom sqlalchemy.orm import Session\n\nfrom app.db import get_db\nfrom app.models.user import User\n\n# A simple in-memory cache to store GitHub API responses\n_auth_cache: Dict[str, Dict[str, Any]] = {}\n\n\ndef fetch_github_user(token: str) -> Dict[str, Any]:\n    \"\"\"\n    Calls the GitHub API to fetch public user data using the provided access token.\n    Caches the result to avoid unnecessary API calls.\n\n    Args:\n        token (str): GitHub access token.\n\n    Returns:\n        Dict[str, Any]: User data from GitHub.\n    \"\"\"\n    if token in _auth_cache:\n        return _auth_cache[token]\n\n    headers = {\"Authorization\": f\"token {token}\"}\n    response = requests.get(\"https://api.github.com/user\", headers=headers)\n    if response.status_code != 200:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid GitHub token or unable to fetch user data\",\n        )\n    user_data = response.json()\n\n    # Cache the result\n    _auth_cache[token] = user_data\n    return user_data\n\n\ndef authenticate_user(request: Request, db: Session = Depends(get_db)) -> User:\n    \"\"\"\n    FastAPI dependency to authenticate a user using a GitHub access token.\n    Extracts the token from the 'Authorization' header, calls the GitHub API to get user data,\n    and retrieves the corresponding User record from the database.\n    \n    Caching is used to minimize GitHub API calls for identical tokens.\n    \n    Args:\n        request (Request): The incoming request.\n        db (Session): SQLAlchemy session dependency.\n    \n    Returns:\n        User: The authenticated User.\n    \n    Raises:\n        HTTPException: If token is missing, invalid, or user is not found in the database.\n    \"\"\"\n    auth_header = request.headers.get(\"Authorization\")\n    if not auth_header:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Authorization header missing\",\n        )\n\n    # Expecting header format: \"token <access_token>\"\n    parts = auth_header.split()\n    if len(parts) != 2 or parts[0].lower() != \"token\":\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid Authorization header format\",\n        )\n    \n    token = parts[1]\n    github_user = fetch_github_user(token)\n\n    # Extract email from GitHub data; if not provided directly, additional logic could be added\n    email = github_user.get(\"email\")\n    if not email:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Email not found in GitHub response\",\n        )\n\n    # Retrieve the corresponding User record from the database\n    user = db.query(User).filter(User.email == email).first()\n    if not user:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=\"User not found in the system\",\n        )\n\n    return user\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     }
   ],
