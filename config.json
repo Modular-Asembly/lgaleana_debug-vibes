@@ -16,7 +16,7 @@
       "design": {
         "type": "module",
         "name": "main",
-        "details": "This is a FastAPI service. Use FastAPI design patterns and best practices.\n\nPlace all files inside the app/ directory, including HTML templates.\n\napp/main.py should contain the following:\n- **Very important:** Call load_dotenv() before any other import.\n- Add CORSMiddleware with *.\n- Add all the application routers.\n- Call Base.metadata.create_all(engine).\n\nNo component can depend on this component.",
+        "details": "This is a FastAPI service. Use FastAPI design patterns and best practices. Place all files inside the app/ directory, including HTML templates. In app/main.py, the following steps must be executed:\n1. Call load_dotenv() immediately before any other import to load environment variables.\n2. Setup CORSMiddleware with the following hardcoded configuration:\n   - allow_origins: [\"*\"]\n   - allow_credentials: True\n   - allow_methods: [\"*\"]\n   - allow_headers: [\"*\"]\n3. Setup a security scheme for Swagger UI using FastAPI's HTTPBearer with these hardcoded values:\n   - scheme_name: \"Authorization\"\n   - description: \"Enter your Bearer token\"\n4. Include the following API routers: user_router, conversation_router, message_router, messages_all_router.\n5. Create the database tables by calling Base.metadata.create_all(bind=engine).\n\nNo component can depend on this component.",
         "env_variables": [],
         "packages": [
           "fastapi==0.115.6",
@@ -24,17 +24,17 @@
           "uvicorn==0.34.0"
         ],
         "dependencies": [
+          "Create or Get User",
+          "Create Conversation",
           "Add Message to Conversation",
           "SQL adaptor",
-          "Create Conversation",
-          "Get All Messages",
-          "Create or Get User"
+          "Get All Messages"
         ]
       },
       "files": [
         {
           "path": "app/main.py",
-          "content": "from dotenv import load_dotenv\nload_dotenv()  # Load environment variables early\n\nfrom fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\n\nfrom app.routes.user import router as user_router\nfrom app.routes.conversation import router as conversation_router\nfrom app.routes.message import router as message_router\nfrom app.routes.messages_all import router as messages_all_router\nfrom app.db import Base, engine\n\ndef create_app() -> FastAPI:\n    app = FastAPI()\n\n    # Setup CORSMiddleware\n    app.add_middleware(\n        CORSMiddleware,\n        allow_origins=[\"*\"],   # Allow all origins\n        allow_credentials=True,\n        allow_methods=[\"*\"],\n        allow_headers=[\"*\"],\n    )\n\n    # Include API routers\n    app.include_router(user_router)\n    app.include_router(conversation_router)\n    app.include_router(message_router)\n    app.include_router(messages_all_router)\n\n    # Create database tables\n    Base.metadata.create_all(bind=engine)\n\n    return app\n\napp = create_app()\n"
+          "content": "from dotenv import load_dotenv\nload_dotenv()  # Load environment variables early\n\nfrom fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom fastapi.security import HTTPBearer\n\nfrom app.routes.user import router as user_router\nfrom app.routes.conversation import router as conversation_router\nfrom app.routes.message import router as message_router\nfrom app.routes.messages_all import router as messages_all_router\nfrom app.db import Base, engine\n\ndef create_app() -> FastAPI:\n    app = FastAPI()\n\n    # Setup CORSMiddleware\n    app.add_middleware(\n        CORSMiddleware,\n        allow_origins=[\"*\"],   # Allow all origins\n        allow_credentials=True,\n        allow_methods=[\"*\"],\n        allow_headers=[\"*\"],\n    )\n\n    # Setup security scheme for Swagger UI\n    security = HTTPBearer(\n        scheme_name=\"Authorization\",\n        description=\"Enter your Bearer token\"\n    )\n\n    # Include API routers\n    app.include_router(user_router)\n    app.include_router(conversation_router)\n    app.include_router(message_router)\n    app.include_router(messages_all_router)\n\n    # Create database tables\n    Base.metadata.create_all(bind=engine)\n\n    return app\n\napp = create_app()\n"
         }
       ],
       "update_status": "up_to_date",
@@ -98,19 +98,19 @@
       "design": {
         "type": "endpoint",
         "name": "Create or Get User",
-        "details": "This endpoint receives a json. github_is in \"id\". github_username is in \"login\". email is in \"email. Store the entire json in raw_data.\n\nIt checks the database to determine if a user with the given github_id exists. If the user exists, it returns the existing user; if not, it creates a new user record in the database and then returns the created user. It uses SQLAlchemy sessions provided by the SQL adaptor, and interacts with the User datamodel. This endpoint now requires authentication via the Authentication module.",
+        "details": "This endpoint receives a JSON payload where the GitHub ID is provided in the 'id' field, GitHub username in the 'login' field, and email in the 'email' field. The endpoint stores the entire request payload in the field 'raw_data'.\n\nIt performs the following steps:\n1. Uses a SQLAlchemy session from the SQL adaptor (dependency: SQL adaptor) to check if a User record exists with the given github_id (extracted from payload['id']).\n2. If a user exists, it returns the existing user record.\n3. If not, it creates a new User record with github_id (payload['id']), email (payload['email']), and raw_data (the entire payload), then commits the transaction and returns the newly created user.\n\nThis endpoint now requires authentication via the Authentication module. The authentication dependency enforces that the caller is authenticated.\n\nHardcoded values extracted include:\n- API route prefix: '/users'\n- HTTP response status code: 200 OK\n- Dictionary keys: 'id' for GitHub ID, 'email' for the user email\n\nIt interacts with the User datamodel and depends on the SQL adaptor and Authentication module.",
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "Authentication",
           "SQL adaptor",
-          "User"
+          "User",
+          "Authentication"
         ]
       },
       "files": [
         {
           "path": "app/routes/user.py",
-          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.authentication import authenticate_user\nfrom typing import Any, Dict\n\nrouter = APIRouter(prefix=\"/users\", tags=[\"users\"])\n\nclass CreateOrGetUserRequest(BaseModel):\n    id: str = Field(..., description=\"GitHub ID\")\n    login: str = Field(..., description=\"GitHub username\")\n    email: str = Field(..., description=\"Email address\")\n\n    class Config:\n        extra = \"allow\"  # Allow extra fields to be stored\n\nclass UserResponse(BaseModel):\n    id: int\n    github_id: str\n    email: str\n    raw_data: Dict[str, Any]\n\n    class Config:\n        orm_mode = True\n\n@router.post(\"/\", response_model=UserResponse, status_code=status.HTTP_200_OK)\ndef create_or_get_user(\n    payload: CreateOrGetUserRequest,\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user)\n) -> UserResponse:\n    # Check if a user with the given GitHub ID already exists.\n    existing_user: User | None = db.query(User).filter(User.github_id == payload.id).first()\n    if existing_user:\n        return existing_user\n\n    # Create a new user record with the entire payload as raw_data.\n    raw_payload: Dict[str, Any] = payload.dict(by_alias=True, exclude_unset=False)\n    new_user = User(\n        github_id=payload.id,\n        email=payload.email,\n        raw_data=raw_payload\n    )\n    db.add(new_user)\n    db.commit()\n    db.refresh(new_user)\n    return new_user\n"
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.authentication import authenticate_user\nfrom typing import Any, Dict\n\nrouter = APIRouter(prefix=\"/users\", tags=[\"users\"])\n\n\nclass UserResponse(BaseModel):\n    id: int\n    github_id: str\n    email: str\n    raw_data: Dict[str, Any]\n\n    class Config:\n        orm_mode = True\n\n\n@router.post(\"/\", response_model=UserResponse, status_code=status.HTTP_200_OK)\ndef create_or_get_user(\n    payload: Dict[str, Any],\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user),\n) -> UserResponse:\n    # Check if a user with the given GitHub ID already exists.\n    existing_user: User | None = (\n        db.query(User).filter(User.github_id == payload[\"id\"]).first()\n    )\n    if existing_user:\n        return existing_user\n\n    # Create a new user record with the entire payload as raw_data.\n    new_user = User(github_id=payload[\"id\"], email=payload[\"email\"], raw_data=payload)\n    db.add(new_user)\n    db.commit()\n    db.refresh(new_user)\n    return new_user\n"
         }
       ],
       "update_status": "up_to_date",
@@ -166,10 +166,10 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "Authentication",
           "SQL adaptor",
-          "Conversation",
-          "User"
+          "User",
+          "Authentication",
+          "Conversation"
         ]
       },
       "files": [
@@ -189,10 +189,10 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "Message",
           "SQL adaptor",
-          "Conversation",
-          "Authentication"
+          "Authentication",
+          "Message",
+          "Conversation"
         ]
       },
       "files": [
@@ -208,7 +208,7 @@
       "design": {
         "type": "module",
         "name": "Authentication",
-        "details": "This module provides an authentication method to be used as a FastAPI dependency. The method, authenticate_user, extracts a GitHub access token from the request (e.g., from headers), calls the GitHub API to fetch the user's public data, then retrieves the email from the response. Using the email (and potentially other GitHub details), it retrieves the corresponding User record via the User datamodel. If the user is not found, appropriate error handling is performed. Cache the method so that we don't call the github api all the time.",
+        "details": "This module provides an authentication method to be used as a FastAPI dependency. The primary method, authenticate_user, uses FastAPI's HTTPBearer security scheme to extract a GitHub access token from the request headers. It then calls the GitHub API (https://api.github.com/user) with a hardcoded header format ('Authorization': 'token {token}') to fetch the user's public data. The response is cached in an in-memory dictionary to avoid redundant calls for the same token. Important extracted hardcoded values include:\n- HTTPBearer initialization: scheme_name='Authorization', description='Enter your Bearer token'\n- GitHub API endpoint: 'https://api.github.com/user'\n- Authorization header format: 'token {token}'\n- Convert GitHub 'id' to string for User lookup\n\nAfter fetching the GitHub user data, the method extracts the GitHub ID using the key 'id' from the JSON response and uses it to query the User datamodel via SQLAlchemy (dependency: SQL adaptor). If the user is not found or if the credentials are invalid/missing, appropriate HTTP exceptions with corresponding status codes (401 for unauthorized, 404 for not found) are raised.",
         "env_variables": [],
         "packages": [
           "requests==2.31.0"
@@ -221,7 +221,7 @@
       "files": [
         {
           "path": "app/authentication.py",
-          "content": "import os\nfrom typing import Any, Dict\n\nimport requests\nfrom fastapi import Depends, HTTPException, Request, status\nfrom sqlalchemy.orm import Session\n\nfrom app.db import get_db\nfrom app.models.user import User\n\n# A simple in-memory cache to store GitHub API responses\n_auth_cache: Dict[str, Dict[str, Any]] = {}\n\n\ndef fetch_github_user(token: str) -> Dict[str, Any]:\n    \"\"\"\n    Calls the GitHub API to fetch public user data using the provided access token.\n    Caches the result to avoid unnecessary API calls.\n\n    Args:\n        token (str): GitHub access token.\n\n    Returns:\n        Dict[str, Any]: User data from GitHub.\n    \"\"\"\n    if token in _auth_cache:\n        return _auth_cache[token]\n\n    headers = {\"Authorization\": f\"token {token}\"}\n    response = requests.get(\"https://api.github.com/user\", headers=headers)\n    if response.status_code != 200:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid GitHub token or unable to fetch user data\",\n        )\n    user_data = response.json()\n\n    # Cache the result\n    _auth_cache[token] = user_data\n    return user_data\n\n\ndef authenticate_user(request: Request, db: Session = Depends(get_db)) -> User:\n    \"\"\"\n    FastAPI dependency to authenticate a user using a GitHub access token.\n    Extracts the token from the 'Authorization' header, calls the GitHub API to get user data,\n    and retrieves the corresponding User record from the database.\n    \n    Caching is used to minimize GitHub API calls for identical tokens.\n    \n    Args:\n        request (Request): The incoming request.\n        db (Session): SQLAlchemy session dependency.\n    \n    Returns:\n        User: The authenticated User.\n    \n    Raises:\n        HTTPException: If token is missing, invalid, or user is not found in the database.\n    \"\"\"\n    auth_header = request.headers.get(\"Authorization\")\n    if not auth_header:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Authorization header missing\",\n        )\n\n    # Expecting header format: \"token <access_token>\"\n    parts = auth_header.split()\n    if len(parts) != 2 or parts[0].lower() != \"token\":\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid Authorization header format\",\n        )\n    \n    token = parts[1]\n    github_user = fetch_github_user(token)\n\n    # Extract email from GitHub data; if not provided directly, additional logic could be added\n    email = github_user.get(\"email\")\n    if not email:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Email not found in GitHub response\",\n        )\n\n    # Retrieve the corresponding User record from the database\n    user = db.query(User).filter(User.email == email).first()\n    if not user:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=\"User not found in the system\",\n        )\n\n    return user\n"
+          "content": "import os\nfrom typing import Any, Dict\n\nimport requests\nfrom fastapi import Depends, HTTPException, Request, status\nfrom fastapi.security import HTTPBearer, HTTPAuthorizationCredentials\nfrom sqlalchemy.orm import Session\n\nfrom app.db import get_db\nfrom app.models.user import User\n\n# A simple in-memory cache to store GitHub API responses\n_auth_cache: Dict[str, Dict[str, Any]] = {}\n\n# Initialize the security scheme\nsecurity = HTTPBearer(\n    scheme_name=\"Authorization\",\n    description=\"Enter your Bearer token\"\n)\n\ndef fetch_github_user(token: str) -> Dict[str, Any]:\n    \"\"\"\n    Calls the GitHub API to fetch public user data using the provided access token.\n    Caches the result to avoid unnecessary API calls.\n\n    Args:\n        token (str): GitHub access token.\n\n    Returns:\n        Dict[str, Any]: User data from GitHub.\n    \"\"\"\n    if token in _auth_cache:\n        return _auth_cache[token]\n\n    headers = {\"Authorization\": f\"token {token}\"}\n    response = requests.get(\"https://api.github.com/user\", headers=headers)\n    if response.status_code != 200:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid GitHub token or unable to fetch user data\",\n        )\n    user_data = response.json()\n\n    # Cache the result\n    _auth_cache[token] = user_data\n    return user_data\n\n\ndef authenticate_user(\n    credentials: HTTPAuthorizationCredentials = Depends(security),\n    db: Session = Depends(get_db)\n) -> User:\n    \"\"\"\n    FastAPI dependency to authenticate a user using a GitHub access token.\n    Uses HTTPBearer security scheme to extract the token, calls the GitHub API to get user data,\n    and retrieves the corresponding User record from the database using the GitHub ID.\n    \n    Caching is used to minimize GitHub API calls for identical tokens.\n    \n    Args:\n        credentials (HTTPAuthorizationCredentials): The bearer token credentials.\n        db (Session): SQLAlchemy session dependency.\n    \n    Returns:\n        User: The authenticated User.\n    \n    Raises:\n        HTTPException: If token is missing, invalid, or user is not found in the database.\n    \"\"\"\n    if not credentials:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Authorization credentials missing\",\n        )\n\n    token = credentials.credentials\n    github_user = fetch_github_user(token)\n\n    # Extract GitHub ID from response\n    github_id = str(github_user[\"id\"])  # Convert to string since our model stores it as String\n    if not github_id:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"GitHub ID not found in response\",\n        )\n\n    # Retrieve the corresponding User record from the database using github_id\n    user = db.query(User).filter(User.github_id == github_id).first()\n    if not user:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=\"User not found in the system\",\n        )\n\n    return user\n"
         }
       ],
       "update_status": "up_to_date",
@@ -235,10 +235,10 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "Message",
           "SQL adaptor",
-          "Conversation",
-          "Authentication"
+          "Authentication",
+          "Message",
+          "Conversation"
         ]
       },
       "files": [
