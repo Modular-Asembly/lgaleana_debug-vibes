@@ -30,6 +30,214 @@
       "files": [],
       "update_status": "to_update",
       "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "infrastructure",
+        "name": "Cloud SQL Database",
+        "details": ""
+      },
+      "files": [],
+      "update_status": "up_to_date",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "SQL adaptor",
+        "details": "The classic FastAPI SQL utility.\n\nConnects to a database.\nDefines Base.\nDefines a method that returns sessions. This method is used by the FastAPI endpoints.",
+        "env_variables": [
+          "DB_URL"
+        ],
+        "packages": [
+          "psycopg2-binary==2.9.10",
+          "sqlalchemy==2.0.36"
+        ],
+        "dependencies": []
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "datamodel",
+        "name": "User",
+        "details": "This SQLAlchemy model represents a GitHub user. It contains an auto-generated primary key 'id', a 'github_id' field to store the GitHub ID, an email, and a 'raw_data' field to store GitHub user data as JSON.",
+        "dependencies": [],
+        "packages": [
+          "sqlalchemy==2.0.36"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Create or Get User",
+        "details": "This endpoint receives a json. github_is in \"id\". github_username is in \"login\". email is in \"email. Store the entire json in raw_data.\n\nIt checks the database to determine if a user with the given github_id exists. If the user exists, it returns the existing user; if not, it creates a new user record in the database and then returns the created user. It uses SQLAlchemy sessions provided by the SQL adaptor, and interacts with the User datamodel. This endpoint now requires authentication via the Authentication module.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "SQL adaptor",
+          "User",
+          "Authentication"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "datamodel",
+        "name": "Conversation",
+        "details": "This SQLAlchemy model represents a conversation. It contains an auto-generated primary key 'id', a 'github_repository' field to store the repository related to the conversation, and a foreign key 'user_id' that associates the conversation with a User. It also defines a relationship to the Message model to access all messages belonging to the conversation.",
+        "dependencies": [
+          "SQL adaptor",
+          "User"
+        ],
+        "packages": [
+          "sqlalchemy==2.0.36"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "datamodel",
+        "name": "Message",
+        "details": "This SQLAlchemy model represents a message. It contains an auto-generated primary key 'id', a 'role' field, and a 'content' field. It also includes a foreign key 'conversation_id' to associate the message with a Conversation.",
+        "dependencies": [
+          "SQL adaptor",
+          "Conversation"
+        ],
+        "packages": [
+          "sqlalchemy==2.0.36"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Create Conversation",
+        "details": "This endpoint creates a new conversation. It expects a JSON body containing 'user_id' and 'github_repository'. It validates that the user exists based on the provided user_id (using the User datamodel). Then, it creates a new Conversation record associated with that user and returns the newly created conversation. This endpoint now requires authentication via the Authentication module.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "SQL adaptor",
+          "User",
+          "Conversation",
+          "Authentication"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Add Message to Conversation",
+        "details": "This endpoint adds a new message to an existing conversation. It expects a JSON body containing 'conversation_id', 'role', and 'content'. It validates that the conversation exists using the Conversation datamodel, then creates a new Message record associated with the conversation and returns the created message. This endpoint now requires authentication via the Authentication module.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "SQL adaptor",
+          "Conversation",
+          "Message",
+          "Authentication"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "login",
+        "details": "Validates the user. Creates an access token.\n\nALGORITHM = \"HS256\"\nACCESS_TOKEN_EXPIRE_MINUTES = 30 minutes\n\nReturn {\n    \"access_token\": ...,\n    \"token_type\": \"bearer\",\n    \"user\": {...}\n}",
+        "env_variables": [
+          "SECRET_KEY"
+        ],
+        "packages": [
+          "bcrypt==4.0.1",
+          "fastapi==0.115.6",
+          "passlib==1.7.4",
+          "pyjwt==2.10.1",
+          "sqlalchemy==2.0.36"
+        ],
+        "dependencies": [
+          "User"
+        ]
+      },
+      "files": [],
+      "update_status": "to_remove",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "authenticate",
+        "details": "Authenticates and returns the user. This method is used by other FastAPI endpoints.\n\nUse OAuth2PasswordBearer(tokenUrl=\"login\").",
+        "env_variables": [
+          "SECRET_KEY"
+        ],
+        "packages": [
+          "fastapi==0.115.6",
+          "pyjwt==2.10.1",
+          "sqlalchemy==2.0.36"
+        ],
+        "dependencies": []
+      },
+      "files": [],
+      "update_status": "to_remove",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "create user",
+        "details": "Creates an user. Hashes its password.",
+        "env_variables": [],
+        "packages": [
+          "fastapi==0.115.6",
+          "pydantic[email]==2.10.4"
+        ],
+        "dependencies": [
+          "User",
+          "authenticate"
+        ]
+      },
+      "files": [],
+      "update_status": "to_remove",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "Authentication",
+        "details": "This module provides an authentication method to be used as a FastAPI dependency. The method, authenticate_user, extracts a GitHub access token from the request (e.g., from headers), calls the GitHub API to fetch the user's public data, then retrieves the email from the response. Using the email (and potentially other GitHub details), it retrieves the corresponding User record via the User datamodel. If the user is not found, appropriate error handling is performed. Cache the method so that we don't call the github api all the time.",
+        "env_variables": [],
+        "packages": [
+          "requests==2.31.0"
+        ],
+        "dependencies": [
+          "SQL adaptor",
+          "User"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
     }
   ],
   "github": "https://github.com/Modular-Asembly/lgaleana_debug-vibes"
