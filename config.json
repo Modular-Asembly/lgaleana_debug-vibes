@@ -178,7 +178,7 @@
           "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.models.conversation import Conversation\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/conversations\", tags=[\"conversations\"])\n\nclass CreateConversationRequest(BaseModel):\n    user_id: int\n    github_repository: str\n\nclass ConversationResponse(BaseModel):\n    id: int\n    user_id: int\n    github_repository: str\n\n    class Config:\n        orm_mode = True\n\n@router.post(\"/\", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)\ndef create_conversation(\n    payload: CreateConversationRequest,\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user),\n) -> ConversationResponse:\n    # Validate that the user exists based on provided user_id\n    user = db.query(User).filter(User.id == payload.user_id).first()\n    if not user:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=f\"User with id {payload.user_id} not found\",\n        )\n\n    # Create the new conversation record associated with the user\n    conversation = Conversation(user_id=payload.user_id, github_repository=payload.github_repository)\n    db.add(conversation)\n    db.commit()\n    db.refresh(conversation)\n    return conversation\n"
         }
       ],
-      "update_status": "up_to_date",
+      "update_status": "to_remove",
       "is_deployed": false
     },
     {
@@ -247,7 +247,26 @@
           "content": "from typing import List\nfrom fastapi import APIRouter, Depends, HTTPException, Query, status\nfrom sqlalchemy.orm import Session\nfrom pydantic import BaseModel\n\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/messages\", tags=[\"messages\"])\n\nclass MessageResponse(BaseModel):\n    id: int\n    role: str\n    content: str\n    conversation_id: int\n\n    class Config:\n        orm_mode = True\n\n@router.get(\"/all\", response_model=List[MessageResponse], status_code=status.HTTP_200_OK)\ndef get_all_messages(\n    github_repository: str = Query(..., description=\"GitHub repository to filter conversations\"),\n    db: Session = Depends(get_db),\n    current_user = Depends(authenticate_user)\n) -> List[MessageResponse]:\n    # Retrieve conversations filtered by the provided GitHub repository\n    conversations = db.query(Conversation).filter(Conversation.github_repository == github_repository).all()\n    if not conversations:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=\"No conversations found for the specified repository\"\n        )\n    \n    conversation_ids = [conversation.id for conversation in conversations]\n    # Retrieve all messages that belong to the filtered conversations\n    messages = db.query(Message).filter(Message.conversation_id.in_(conversation_ids)).all()\n    return messages\n"
         }
       ],
-      "update_status": "up_to_date",
+      "update_status": "to_remove",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "Get or Create Conversation",
+        "details": "This endpoint handles two use cases based on the provided 'github_repository'. It first authenticates the user via the Authentication module. Then, it accepts a JSON payload or query parameter with the 'github_repository'. The endpoint checks if a Conversation exists for the authenticated user and the specified repository. If it doesn't exist, a new Conversation is created and initialized with no messages. Regardless of creation or existence, the endpoint returns all messages associated with that conversation. This merged logic enables clients to retrieve conversation messages while ensuring that a conversation record exists for the given repository.",
+        "env_variables": [],
+        "packages": [],
+        "dependencies": [
+          "SQL adaptor",
+          "User",
+          "Authentication",
+          "Conversation",
+          "Message"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
       "is_deployed": false
     }
   ],
