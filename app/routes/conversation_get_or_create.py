@@ -11,6 +11,7 @@ from app.models.message import Message
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
+
 class MessageResponse(BaseModel):
     id: int = Field(..., description="Message identifier")
     role: str = Field(..., description="Role of the message sender")
@@ -19,21 +20,28 @@ class MessageResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes=True
+
 
 class ConversationResponse(BaseModel):
     id: int = Field(..., description="Conversation identifier")
-    github_repository: str = Field(..., description="GitHub repository associated with the conversation")
+    github_repository: str = Field(
+        ..., description="GitHub repository associated with the conversation"
+    )
     user_id: int = Field(..., description="ID of the user owning this conversation")
-    messages: List[MessageResponse] = Field(default_factory=list, description="List of messages in the conversation")
+    messages: List[MessageResponse] = Field(
+        default_factory=list, description="List of messages in the conversation"
+    )
 
     class Config:
         orm_mode = True
+
 
 @router.get("/", response_model=ConversationResponse, status_code=status.HTTP_200_OK)
 def get_or_create_conversation(
     github_repository: str = Query(..., description="GitHub repository identifier"),
     db: Session = Depends(get_db),
-    current_user = Depends(authenticate_user),
+    current_user=Depends(authenticate_user),
 ) -> ConversationResponse:
     """
     Get or create a conversation based on the provided GitHub repository.
@@ -52,8 +60,7 @@ def get_or_create_conversation(
     if not conversation:
         # Create new conversation record with no messages.
         conversation = Conversation(
-            github_repository=github_repository,
-            user_id=current_user.id
+            github_repository=github_repository, user_id=current_user.id
         )
         db.add(conversation)
         db.commit()
@@ -66,5 +73,5 @@ def get_or_create_conversation(
         id=conversation.id,
         github_repository=conversation.github_repository,
         user_id=conversation.user_id,
-        messages=messages
+        messages=[MessageResponse.from_orm(msg) for msg in messages],
     )

@@ -10,9 +10,8 @@ from app.authentication import authenticate_user
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
-class AddMessageRequest(BaseModel):
+class UserMessageRequest(BaseModel):
     conversation_id: int = Field(..., description="ID of the conversation")
-    role: str = Field(..., description="Role of the message sender")
     content: str = Field(..., description="Content of the message")
 
 class MessageResponse(BaseModel):
@@ -30,7 +29,7 @@ class MessageResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 def add_message(
-    payload: AddMessageRequest,
+    payload: UserMessageRequest,
     db: Session = Depends(get_db),
     current_user: Any = Depends(authenticate_user)
 ) -> MessageResponse:
@@ -43,12 +42,19 @@ def add_message(
         )
     
     # Create new Message record
-    new_message = Message(
-        role=payload.role,
+    user_message = Message(
+        role="user",
         content=payload.content,
         conversation_id=payload.conversation_id
     )
-    db.add(new_message)
+    db.add(user_message)
+    ai_message = Message(
+        role="assistant",
+        content="Test",
+        conversation_id=payload.conversation_id
+    )
+    db.add(ai_message)
     db.commit()
-    db.refresh(new_message)
-    return new_message
+
+    db.refresh(ai_message)
+    return ai_message

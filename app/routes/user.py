@@ -23,17 +23,16 @@ class UserResponse(BaseModel):
 def create_or_get_user(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: User = Depends(authenticate_user),
 ) -> UserResponse:
     # Check if a user with the given GitHub ID already exists.
     existing_user: User | None = (
-        db.query(User).filter(User.github_id == payload["id"]).first()
+        db.query(User).filter(User.github_id == payload["sub"]).first()
     )
     if existing_user:
         return existing_user
 
     # Create a new user record with the entire payload as raw_data.
-    new_user = User(github_id=payload["id"], email=payload["email"], raw_data=payload)
+    new_user = User(github_id=payload["sub"], email=payload["email"], raw_data=payload)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

@@ -24,11 +24,11 @@
           "uvicorn==0.34.0"
         ],
         "dependencies": [
-          "Get All Users",
-          "Create or Get User",
-          "Add Message to Conversation",
           "SQL adaptor",
-          "Get or Create Conversation"
+          "Create or Get User",
+          "Get All Users",
+          "Get or Create Conversation",
+          "Add Message to Conversation"
         ]
       },
       "files": [
@@ -98,19 +98,19 @@
       "design": {
         "type": "endpoint",
         "name": "Create or Get User",
-        "details": "This endpoint receives a JSON payload where the GitHub ID is provided in the 'id' field, GitHub username in the 'login' field, and email in the 'email' field. The endpoint stores the entire request payload in the field 'raw_data'.\n\nIt performs the following steps:\n1. Uses a SQLAlchemy session from the SQL adaptor (dependency: SQL adaptor) to check if a User record exists with the given github_id (extracted from payload['id']).\n2. If a user exists, it returns the existing user record.\n3. If not, it creates a new User record with github_id (payload['id']), email (payload['email']), and raw_data (the entire payload), then commits the transaction and returns the newly created user.\n\nThis endpoint now requires authentication via the Authentication module. The authentication dependency enforces that the caller is authenticated.\n\nHardcoded values extracted include:\n- API route prefix: '/users'\n- HTTP response status code: 200 OK\n- Dictionary keys: 'id' for GitHub ID, 'email' for the user email\n\nIt interacts with the User datamodel and depends on the SQL adaptor and Authentication module.",
+        "details": "This endpoint receives a JSON payload where the GitHub ID is provided in the 'id' field, GitHub username in the 'login' field, and email in the 'email' field. The endpoint stores the entire request payload in the field 'raw_data'. It performs the following steps:\n1. Uses a SQLAlchemy session from the SQL adaptor (dependency: SQL adaptor) to check if a User record exists with the given github_id (extracted from payload['id']).\n2. If a user exists, it returns the existing user record.\n3. If not, it creates a new User record with github_id (payload['id']), email (payload['email']), and raw_data (the entire payload), then commits the transaction and returns the newly created user.\n\nAuthentication Requirement:\n- This endpoint requires authentication via the Authentication module. The authentication dependency enforces that the caller is authenticated.\n\nHardcoded values:\n- API route prefix: '/users'\n- HTTP response status code: 200 OK\n- Extraction keys: 'id' for GitHub ID and 'email' for the user email\n\nInteracts with the User datamodel and depends on the SQL adaptor and Authentication module. Note: Although the endpoint design indicates the use of authentication, the implementation in the code snippet uses payload['sub'] for lookup, which should be reconciled with the design specification.",
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "User",
           "SQL adaptor",
-          "Authentication"
+          "Authentication",
+          "User"
         ]
       },
       "files": [
         {
           "path": "app/routes/user.py",
-          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.authentication import authenticate_user\nfrom typing import Any, Dict\n\nrouter = APIRouter(prefix=\"/users\", tags=[\"users\"])\n\n\nclass UserResponse(BaseModel):\n    id: int\n    github_id: str\n    email: str\n    raw_data: Dict[str, Any]\n\n    class Config:\n        orm_mode = True\n\n\n@router.post(\"/\", response_model=UserResponse, status_code=status.HTTP_200_OK)\ndef create_or_get_user(\n    payload: Dict[str, Any],\n    db: Session = Depends(get_db),\n    current_user: User = Depends(authenticate_user),\n) -> UserResponse:\n    # Check if a user with the given GitHub ID already exists.\n    existing_user: User | None = (\n        db.query(User).filter(User.github_id == payload[\"id\"]).first()\n    )\n    if existing_user:\n        return existing_user\n\n    # Create a new user record with the entire payload as raw_data.\n    new_user = User(github_id=payload[\"id\"], email=payload[\"email\"], raw_data=payload)\n    db.add(new_user)\n    db.commit()\n    db.refresh(new_user)\n    return new_user\n"
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom app.db import get_db\nfrom app.models.user import User\nfrom app.authentication import authenticate_user\nfrom typing import Any, Dict\n\nrouter = APIRouter(prefix=\"/users\", tags=[\"users\"])\n\n\nclass UserResponse(BaseModel):\n    id: int\n    github_id: str\n    email: str\n    raw_data: Dict[str, Any]\n\n    class Config:\n        orm_mode = True\n\n\n@router.post(\"/\", response_model=UserResponse, status_code=status.HTTP_200_OK)\ndef create_or_get_user(\n    payload: Dict[str, Any],\n    db: Session = Depends(get_db),\n) -> UserResponse:\n    # Check if a user with the given GitHub ID already exists.\n    existing_user: User | None = (\n        db.query(User).filter(User.github_id == payload[\"sub\"]).first()\n    )\n    if existing_user:\n        return existing_user\n\n    # Create a new user record with the entire payload as raw_data.\n    new_user = User(github_id=payload[\"sub\"], email=payload[\"email\"], raw_data=payload)\n    db.add(new_user)\n    db.commit()\n    db.refresh(new_user)\n    return new_user\n"
         }
       ],
       "update_status": "up_to_date",
@@ -162,20 +162,20 @@
       "design": {
         "type": "endpoint",
         "name": "Add Message to Conversation",
-        "details": "This endpoint adds a new message to an existing conversation. It expects a JSON body containing 'conversation_id', 'role', and 'content'. It validates that the conversation exists using the Conversation datamodel, then creates a new Message record associated with the conversation and returns the created message. This endpoint now requires authentication via the Authentication module.",
+        "details": "This endpoint adds a new message to an existing conversation. It expects a JSON body containing 'conversation_id' and 'content'. It validates that the conversation exists using the Conversation datamodel, then creates two new Message records associated with that conversation:\n1. A user message is created with a hardcoded role of 'user' and its content taken from payload.content.\n2. An assistant message is created with a hardcoded role of 'assistant' and content 'Test'.\nAfter adding both messages, the endpoint commits the transaction, refreshes the assistant message, and returns the assistant message as the response.\n\nAuthentication Requirement:\n- This endpoint now requires authentication via the Authentication module. The authentication dependency enforces that the caller is authenticated.\n\nHardcoded values:\n- API route prefix: '/messages'\n- HTTP response status code: 201 Created\n- Roles: User message role is hardcoded as 'user'; assistant message role is hardcoded as 'assistant'\n- Assistant message content is hardcoded as 'Test'\n- Conversation validation: Uses Conversation datamodel to ensure the conversation exists\n\nInteracts with Message and Conversation datamodels and depends on SQL adaptor and Authentication module.",
         "env_variables": [],
         "packages": [],
         "dependencies": [
           "Message",
-          "Conversation",
           "SQL adaptor",
+          "Conversation",
           "Authentication"
         ]
       },
       "files": [
         {
           "path": "app/routes/message.py",
-          "content": "from fastapi import APIRouter, Depends, HTTPException, status, Request\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom typing import Any, Dict\n\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/messages\", tags=[\"messages\"])\n\nclass AddMessageRequest(BaseModel):\n    conversation_id: int = Field(..., description=\"ID of the conversation\")\n    role: str = Field(..., description=\"Role of the message sender\")\n    content: str = Field(..., description=\"Content of the message\")\n\nclass MessageResponse(BaseModel):\n    id: int\n    role: str\n    content: str\n    conversation_id: int\n\n    class Config:\n        orm_mode = True\n\n@router.post(\n    \"/\",\n    response_model=MessageResponse,\n    status_code=status.HTTP_201_CREATED,\n)\ndef add_message(\n    payload: AddMessageRequest,\n    db: Session = Depends(get_db),\n    current_user: Any = Depends(authenticate_user)\n) -> MessageResponse:\n    # Validate that the conversation exists\n    conversation = db.query(Conversation).filter(Conversation.id == payload.conversation_id).first()\n    if not conversation:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=f\"Conversation with id {payload.conversation_id} not found\",\n        )\n    \n    # Create new Message record\n    new_message = Message(\n        role=payload.role,\n        content=payload.content,\n        conversation_id=payload.conversation_id\n    )\n    db.add(new_message)\n    db.commit()\n    db.refresh(new_message)\n    return new_message\n"
+          "content": "from fastapi import APIRouter, Depends, HTTPException, status, Request\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\nfrom typing import Any, Dict\n\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\nfrom app.authentication import authenticate_user\n\nrouter = APIRouter(prefix=\"/messages\", tags=[\"messages\"])\n\nclass UserMessageRequest(BaseModel):\n    conversation_id: int = Field(..., description=\"ID of the conversation\")\n    content: str = Field(..., description=\"Content of the message\")\n\nclass MessageResponse(BaseModel):\n    id: int\n    role: str\n    content: str\n    conversation_id: int\n\n    class Config:\n        orm_mode = True\n\n@router.post(\n    \"/\",\n    response_model=MessageResponse,\n    status_code=status.HTTP_201_CREATED,\n)\ndef add_message(\n    payload: UserMessageRequest,\n    db: Session = Depends(get_db),\n    current_user: Any = Depends(authenticate_user)\n) -> MessageResponse:\n    # Validate that the conversation exists\n    conversation = db.query(Conversation).filter(Conversation.id == payload.conversation_id).first()\n    if not conversation:\n        raise HTTPException(\n            status_code=status.HTTP_404_NOT_FOUND,\n            detail=f\"Conversation with id {payload.conversation_id} not found\",\n        )\n    \n    # Create new Message record\n    user_message = Message(\n        role=\"user\",\n        content=payload.content,\n        conversation_id=payload.conversation_id\n    )\n    db.add(user_message)\n    ai_message = Message(\n        role=\"assistant\",\n        content=\"Test\",\n        conversation_id=payload.conversation_id\n    )\n    db.add(ai_message)\n    db.commit()\n\n    db.refresh(ai_message)\n    return ai_message\n"
         }
       ],
       "update_status": "up_to_date",
@@ -191,8 +191,8 @@
           "requests==2.31.0"
         ],
         "dependencies": [
-          "User",
-          "SQL adaptor"
+          "SQL adaptor",
+          "User"
         ]
       },
       "files": [
@@ -208,20 +208,20 @@
       "design": {
         "type": "endpoint",
         "name": "Get or Create Conversation",
-        "details": "This endpoint handles two use cases based on the provided 'github_repository'. It first authenticates the user via the Authentication module. Then, it accepts a JSON payload or query parameter with the 'github_repository'. The endpoint checks if a Conversation exists for the authenticated user and the specified repository. If it doesn't exist, a new Conversation is created and initialized with no messages. Regardless of creation or existence, the endpoint returns all messages associated with that conversation. This merged logic enables clients to retrieve conversation messages while ensuring that a conversation record exists for the given repository.",
+        "details": "This endpoint handles two use cases based on the provided 'github_repository'. It first authenticates the user via the Authentication module. It accepts a query parameter 'github_repository' as input. The endpoint then checks if a Conversation exists for the authenticated user and the specified repository. If it doesn't exist, a new Conversation is created with no messages. Regardless, the endpoint returns the conversation along with all its associated messages. The response is constructed using a ConversationResponse schema that includes the conversation's ID, github_repository, user_id, and a list of messages formatted using MessageResponse. Each MessageResponse includes the id, role, content, and conversation_id.\n\nAuthentication Requirement:\n- The endpoint requires authentication via the Authentication module (dependency enforced using authenticate_user).\n\nHardcoded values:\n- API route prefix: '/conversations'\n- HTTP response status code: 200 OK\n- Input parameter: 'github_repository' is a required query parameter\n- ORM: Uses from_orm method to construct response for messages\n\nInteracts with Message and Conversation datamodels and depends on SQL adaptor and Authentication module.",
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "Message",
           "Conversation",
           "SQL adaptor",
-          "Authentication"
+          "Authentication",
+          "Message"
         ]
       },
       "files": [
         {
           "path": "app/routes/conversation_get_or_create.py",
-          "content": "from typing import List\n\nfrom fastapi import APIRouter, Depends, HTTPException, Query, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\n\nfrom app.authentication import authenticate_user\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\n\nrouter = APIRouter(prefix=\"/conversations\", tags=[\"conversations\"])\n\nclass MessageResponse(BaseModel):\n    id: int = Field(..., description=\"Message identifier\")\n    role: str = Field(..., description=\"Role of the message sender\")\n    content: str = Field(..., description=\"Content of the message\")\n    conversation_id: int = Field(..., description=\"Associated conversation ID\")\n\n    class Config:\n        orm_mode = True\n\nclass ConversationResponse(BaseModel):\n    id: int = Field(..., description=\"Conversation identifier\")\n    github_repository: str = Field(..., description=\"GitHub repository associated with the conversation\")\n    user_id: int = Field(..., description=\"ID of the user owning this conversation\")\n    messages: List[MessageResponse] = Field(default_factory=list, description=\"List of messages in the conversation\")\n\n    class Config:\n        orm_mode = True\n\n@router.get(\"/\", response_model=ConversationResponse, status_code=status.HTTP_200_OK)\ndef get_or_create_conversation(\n    github_repository: str = Query(..., description=\"GitHub repository identifier\"),\n    db: Session = Depends(get_db),\n    current_user = Depends(authenticate_user),\n) -> ConversationResponse:\n    \"\"\"\n    Get or create a conversation based on the provided GitHub repository.\n    Authenticates the user via the authentication module. Then, it looks for a conversation record\n    that belongs to the authenticated user and matches the given GitHub repository. If it doesn't exist,\n    a new conversation is created. Regardless, it returns the conversation along with all its associated messages.\n    \"\"\"\n    # Look for an existing conversation for current user and given repository.\n    conversation: Conversation | None = (\n        db.query(Conversation)\n        .filter(Conversation.user_id == current_user.id)\n        .filter(Conversation.github_repository == github_repository)\n        .first()\n    )\n\n    if not conversation:\n        # Create new conversation record with no messages.\n        conversation = Conversation(\n            github_repository=github_repository,\n            user_id=current_user.id\n        )\n        db.add(conversation)\n        db.commit()\n        db.refresh(conversation)\n\n    # Load associated messages (relationship should be lazy loaded)\n    messages = conversation.messages\n\n    return ConversationResponse(\n        id=conversation.id,\n        github_repository=conversation.github_repository,\n        user_id=conversation.user_id,\n        messages=messages\n    )\n"
+          "content": "from typing import List\n\nfrom fastapi import APIRouter, Depends, HTTPException, Query, status\nfrom pydantic import BaseModel, Field\nfrom sqlalchemy.orm import Session\n\nfrom app.authentication import authenticate_user\nfrom app.db import get_db\nfrom app.models.conversation import Conversation\nfrom app.models.message import Message\n\nrouter = APIRouter(prefix=\"/conversations\", tags=[\"conversations\"])\n\n\nclass MessageResponse(BaseModel):\n    id: int = Field(..., description=\"Message identifier\")\n    role: str = Field(..., description=\"Role of the message sender\")\n    content: str = Field(..., description=\"Content of the message\")\n    conversation_id: int = Field(..., description=\"Associated conversation ID\")\n\n    class Config:\n        orm_mode = True\n        from_attributes=True\n\n\nclass ConversationResponse(BaseModel):\n    id: int = Field(..., description=\"Conversation identifier\")\n    github_repository: str = Field(\n        ..., description=\"GitHub repository associated with the conversation\"\n    )\n    user_id: int = Field(..., description=\"ID of the user owning this conversation\")\n    messages: List[MessageResponse] = Field(\n        default_factory=list, description=\"List of messages in the conversation\"\n    )\n\n    class Config:\n        orm_mode = True\n\n\n@router.get(\"/\", response_model=ConversationResponse, status_code=status.HTTP_200_OK)\ndef get_or_create_conversation(\n    github_repository: str = Query(..., description=\"GitHub repository identifier\"),\n    db: Session = Depends(get_db),\n    current_user=Depends(authenticate_user),\n) -> ConversationResponse:\n    \"\"\"\n    Get or create a conversation based on the provided GitHub repository.\n    Authenticates the user via the authentication module. Then, it looks for a conversation record\n    that belongs to the authenticated user and matches the given GitHub repository. If it doesn't exist,\n    a new conversation is created. Regardless, it returns the conversation along with all its associated messages.\n    \"\"\"\n    # Look for an existing conversation for current user and given repository.\n    conversation: Conversation | None = (\n        db.query(Conversation)\n        .filter(Conversation.user_id == current_user.id)\n        .filter(Conversation.github_repository == github_repository)\n        .first()\n    )\n\n    if not conversation:\n        # Create new conversation record with no messages.\n        conversation = Conversation(\n            github_repository=github_repository, user_id=current_user.id\n        )\n        db.add(conversation)\n        db.commit()\n        db.refresh(conversation)\n\n    # Load associated messages (relationship should be lazy loaded)\n    messages = conversation.messages\n\n    return ConversationResponse(\n        id=conversation.id,\n        github_repository=conversation.github_repository,\n        user_id=conversation.user_id,\n        messages=[MessageResponse.from_orm(msg) for msg in messages],\n    )\n"
         }
       ],
       "update_status": "up_to_date",
@@ -235,9 +235,9 @@
         "env_variables": [],
         "packages": [],
         "dependencies": [
-          "User",
           "SQL adaptor",
-          "Authentication"
+          "Authentication",
+          "User"
         ]
       },
       "files": [
